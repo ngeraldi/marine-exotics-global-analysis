@@ -1,6 +1,13 @@
 # marine-non-native-global-analysis
-Code and data for the meta-analysis of marine non-native species
+Code used for the meta-analysis of marine non-native species, which includes two puclications
 
-See publications 
-Anton et al. 2019
+
+Anton et al. 2019 in Nature ecology and evolution
+script includes
+  Analysis
+  figuures
+  
+Upcoming publication on effects of non-natvie species and human footprint
+  Analysis
+  Figure 1 - 
 
