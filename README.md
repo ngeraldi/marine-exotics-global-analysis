@@ -4,7 +4,7 @@ This includes script for two publications
 
 
 Anton et al. 2019 in Nature ecology and evolution
-script includes
+Script includes
   Analysis
   Figures
   
