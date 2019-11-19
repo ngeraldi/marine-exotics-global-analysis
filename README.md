@@ -1,20 +1,20 @@
 # marine-non-native-global-analysis
-Code used for the meta-analysis of marine non-native species.
-This includes script for two publications
+###Code used for the meta-analysis of marine non-native species.
+###This includes script for two publications
 
 
-Anton et al. 2019 in Nature ecology and evolution
+##Anton et al. 2019 in Nature ecology and evolution
 
-Script includes
   
-  Analysis - 
+-Anton_etal_2019_NEE_script.R
+      Includes analysis and descriptions
   
-  Figures -
+-Figure_species_rank_more_5_studies.R
+      Basic scipt for figure of species with greatest ecological effects- pics were aded outside of plot
   
 
-Upcoming publication on effects of non-natvie species and human footprint
+##Ecological effects of non-natvie species is related with human footprint proxies- Geraldi et al. in press Global
   
-  Analysis -
-  
-  Figure 1 - 
+-non_native_footprint_map_figs_124.Rmd
+      Script to figures 1, 2, and 4
 
