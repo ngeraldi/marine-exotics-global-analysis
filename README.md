@@ -2,7 +2,7 @@
 
 ## Code used for the meta-analysis of marine non-native species.
 
-## This includes script for two publications
+### This includes script for two publications
 
 
 ## Anton et al. 2019 in Nature ecology and evolution
@@ -15,7 +15,7 @@
       Basic scipt for figure of species with greatest ecological effects- pics were aded outside of plot
   
 
-## Ecological effects of non-natvie species is related with human footprint proxies- Geraldi et al. in press Global
+## Effects of non-nativee species is related with human footprint- Geraldi et al. in press Global Change biology
   
 -non_native_footprint_map_figs_124.Rmd
       Script to figures 1, 2, and 4
