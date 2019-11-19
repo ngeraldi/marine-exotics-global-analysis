@@ -1,0 +1,812 @@
+---
+title: "non_native_humans_layers_fig1"
+author: "Nathan R. Geraldi"
+date: "October 2, 2019"
+output: github_document
+---
+
+set table options
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## libraries
+
+```{r Libraries}
+library(mapdata)
+library(dplyr)
+library(RColorBrewer)   #   install.packages("RColorBrewer")
+library(gmodels) # for confidence intervals
+library(rgdal)
+library(raster)
+# tempatrue velocity
+library("vocc")
+library("hadsstr")  ##   hadsstr::load_hadsst
+```
+
+## universal variables
+
+```{r directory}
+#location of rater data
+rast_data<-"/Users/geraldn/Dropbox/Global_databases/"
+# location of base layter for maps
+base <- readOGR(dsn = "/Users/geraldn/Dropbox/Global_databases/naturalearthdata/ne_110m_land",
+                layer = "ne_110m_land")  
+
+## file to save plots
+fig_file="/Users/geraldn/Dropbox/Andrea_Nate/Invasion calamity/R/plots for global match manuscript"
+
+```
+
+## get data
+meta-analysis data, and predictions from models
+```{r data}
+
+# #####   Get data from molner, invasive specie per biome
+mol<- openxlsx::read.xlsx("/Users/geraldn/Dropbox/Andrea_Nate/Invasion calamity/Databases/Distribution/Molnar_by_prov.xlsx",sheet = 1)# 
+##  get meta-analysis data
+qual<-read.table("/Users/geraldn/Dropbox/Andrea_Nate/Invasion calamity/R/CSV/invasive_global_match.csv", sep=",",header=T)
+quant<-read.csv("/Users/geraldn/Dropbox/Invasion calamity shared/Data_final/Final_csv/quant_FINAL_4.csv", header=T,sep=",") 
+pred<-read.csv("/Users/geraldn/Dropbox/Andrea_Nate/Invasion calamity/R/CSV/invasive_global_match_for_predict_with.csv", header=T,sep=",") 
+
+```
+
+
+## backtransform predicted variables
+
+```{r backtrans}
+## fix, backtransform predicted yi
+pred1<- pred %>% #  names(pred)
+  mutate(bio_yi=(exp(abs(bio_predict)))-1) %>%
+  mutate(bio_yi=if_else(bio_predict<0,(bio_yi*-1), bio_yi)) %>%
+  mutate(ind_yi=(exp(abs(ind_predict)))-1) %>% 
+  mutate(ind_yi=if_else(ind_predict<0,(ind_yi*-1), ind_yi))
+# prep for color then join to pred1
+#  hist(cbind(pred$ind_yi, pred$bio_yi, quant$yi)) #  do -2 to 2   # hist(quant$yi)
+lnn<-seq(-2,2,length.out = 29)
+rg_color<-colorRampPalette(c("#D73027","#FFFFBF","#1A9850"))(30)
+rg_col_df<-as.character(cut(lnn, breaks=c(-Inf,lnn, Inf), labels=rg_color))
+rg_col_df<-cbind(lnn,rg_col_df)
+#  plot(c(1:30),c(1:30),col=rg_color)
+pred1<- pred1 %>%   # hist(pred1$bio_yi)     hist(pred1$bio_predict)
+  mutate(yi_bio_color = as.character(cut(bio_yi, breaks=c(-Inf,lnn, Inf), labels=rg_color))) %>% 
+  mutate(yi_ind_color = as.character(cut(ind_yi, breaks=c(-Inf,lnn, Inf), labels=rg_color)))
+```
+
+
+## tidy data
+
+```{r tidy}
+## join qual data to quant    join by study  names(qual)   names(quant)
+mes<-qual[,c(3,54:length(names(qual)))]
+
+quant2<-quant %>%
+  left_join(mes, by="qual_ID")
+################
+##   fix data, from analysis3
+sdat<-quant2 %>%  ## names(sdat)
+  mutate(yit=log(abs(yi)+1)) %>% 
+  mutate(yit2=yit)  %>% 
+  mutate(yit2=if_else(yi<0,(yit2*-1), yit2)) %>%
+  mutate(yi_color = as.character(cut(yi, breaks=c(-Inf,lnn, Inf), labels=rg_color))) %>% 
+  mutate(logdistmark=log(dist_market+1)) %>% 
+  mutate(logpop100=log(Pop_in_100km+1)) %>% 
+  mutate(exotic.trophic.level.new= gsub(" ", "", exotic.trophic.level.new) ) %>% 
+  mutate(native.taxa.trophic.level.new= gsub(" ", "", native.taxa.trophic.level.new) ) %>% 
+  mutate(slogdistmark=scale(logdistmark),slogpop100=scale(logpop100)
+         ,sMol_exot_sp=scale(Mol_exot_sp),sOHI_2013_near=scale(OHI_2013_near)
+         ,slinear_change.2=scale(linear_change.2))
+attributes(sdat$slogdistmark) <- NULL
+attributes(sdat$slogpop100) <- NULL
+attributes(sdat$sMol_exot_sp) <- NULL
+attributes(sdat$sOHI_2013_near) <- NULL
+attributes(sdat$slinear_change.2) <- NULL
+#########################################################
+###   limit data to 3 response variables
+sdat_abu<- sdat %>%    # names(sdat)   unique(sdat4$X.variable10_review)
+  #dplyr::filter(X.variable3_review=="community") %>% 
+  filter(X.variable10_review=="taxa abundance") %>% 
+dplyr::group_by(latitude..decimal.degrees., longitude..decimal.degrees.) %>% 
+  summarize(mean_yi=mean(yi)) %>% 
+  mutate(mean_yi_color = as.character(cut(mean_yi, breaks=c(-Inf,lnn, Inf), labels=rg_color)))
+sdat_div<- sdat %>%    # names(sdat)   unique(sdat4$X.variable10_review)
+  dplyr::filter(X.variable3_review=="community") %>% 
+  filter(X.variable10_review=="species richness") %>% 
+    dplyr::group_by(latitude..decimal.degrees., longitude..decimal.degrees.) %>% 
+  summarize(mean_yi=mean(yi))%>% 
+  mutate(mean_yi_color = as.character(cut(mean_yi, breaks=c(-Inf,lnn, Inf), labels=rg_color)))
+sdat_ind<- sdat %>%    # names(sdat)   unique(sdat$X.variable10_review)  unique(sdat$X.variable3_review)
+  filter(X.variable3_review=="species") %>% 
+  filter(X.variable10_review=="survival" | X.variable10_review=="fitness" | X.variable10_review=="growth") %>% 
+  dplyr::group_by(latitude..decimal.degrees., longitude..decimal.degrees.) %>% 
+  summarize(mean_yi=mean(yi))%>% 
+  mutate(mean_yi_color = as.character(cut(mean_yi, breaks=c(-Inf,lnn, Inf), labels=rg_color)))
+### get mean predictor per ecoregion - why hawaii +++
+mes_div<- pred %>%    # names(pred)   unique(sdat$X.variable10_review)  unique(sdat$X.variable3_review)
+ dplyr::group_by(ECOREGION) %>% 
+  summarize(mean_yi=mean(bio_predict), Pop_in_100km=mean(Pop_in_100km), Mol_exot_sp=mean(Mol_exot_sp)
+            , linear_change=mean(linear_change), OHI_2013=mean(OHI_2013)
+            , logdistmark=mean(logdistmark)) 
+```
+
+
+
+## get rasters
+
+```{r get_rast}
+##########   human density
+rast_data<-"/Users/geraldn/Dropbox/Global_databases/"
+
+setwd(paste(rast_data,"human_pop/gpw-v4-population-count-adjusted-to-2015-unwpp-country-totals-2010",sep=""))
+pop <- raster("gpw-v4-population-count-adjusted-to-2015-unwpp-country-totals_2010.tif")
+popl<-log(pop+1)
+popl2<-crop(popl,extent(ext))
+### dist to market  #############
+setwd("/Users/geraldn/Dropbox/Global_databases/MSEC/ecy1884-sup-0002-DataS1")
+dist_mar1<- raster("msec_distmarket.nc")     #   hist(nutpol)
+dist_mar<-rotate(dist_mar1) #raster package
+dist_marl<-log(dist_mar+1)
+dist_marl2<-crop(dist_marl,extent(ext))
+###  add OHI index !!!!
+setwd(paste(rast_data,"OHI/cumulative_impact_one_2013_global_cumul_impact_2013_mol_20150714053146",sep=""))
+OHI_2013<- raster("/Users/geraldn/Dropbox/Global_databases/OHI/cumulative_impact_one_2013_global_cumul_impact_2013_mol_20150714053146/global_cumul_impact_2013_all_layers_wgs.tif")     #   hist(OHI_2013)  plot(OHI_2013)
+##########################
+## get linera rate of temp change - sue plot(xx[[2]])
+##  use hadsstr   from jbyrnes
+setwd(paste(rast_data,"SST_HadISST1",sep=""))
+files<-list.files(patter="*.nc")    # 
+x<- raster("HadISST_sst.nc")   # summary(xx)    
+x<-load_hadsst("HadISST_sst.nc")    # mes<-x@z$Date  last(mes)
+xx<-get_all_rasters(x, years = 1980:2016)
+xx_c<-crop(xx,extent(ext))
+# plot(xx[[2]])  range(xx[[2]])
+b_rast<-xx[[2]]
+b_rast[is.na(b_rast)]<-100
+b_rast[b_rast<99]<-NA
+#####################################
+### nonindigenous species   #############
+####   MEOW  marine regions
+ogrInfo(paste(rast_data,"regions/MEOW-TNC",sep=""), "meow_ecos")
+shape <- readOGR(dsn = paste(rast_data,"regions/MEOW-TNC",sep=''), layer = "meow_ecos")   # 
+# summary(shape)
+#   plot(shape)    summary(shape2)     spplot(shape, z="shannon")  shape2$yi_bio_medain_color
+crs.geo <- CRS("+proj=longlat +datum=WGS84 +no_defs +ellps=WGS84 +towgs84=0,0,0")  # geographical, datum WGS84 copy from summary
+
+# #####   Get data from molner
+#  mol was impoarted in get data
+colnames(mol)[4]<-"non_native_richness"
+lnn2<-seq(0,60,length.out = 29)  # range(mol$non_native_richness, na.rm=T)  hist(mol$non_native_richness)
+mol<-mol %>%   #  names(mol) 
+  mutate(non_native_color = as.character(cut(non_native_richness, breaks=c(-Inf,lnn2, Inf), labels=yr))) 
+### merge data to polygon - by PROVINCE
+Molnar<-sp::merge(shape,mol[,c(3:4,6)],by="PROVINCE" , all.x=T)
+mess<-Molnar@data  #  
+```
+
+## plotting variables
+
+```{r plot var}
+data_u<-rbind(sdat_abu,sdat_div,sdat_ind)
+data1<- data_u %>% 
+  #dplyr::select(latitude..decimal.degrees., longitude..decimal.degrees., yi) %>% 
+  dplyr::group_by(latitude..decimal.degrees., longitude..decimal.degrees.) %>% 
+  summarize(mean_yi=mean(mean_yi)) %>% 
+  mutate(yi_color = as.character(cut(mean_yi, breaks=c(-Inf,lnn, Inf), labels=rg_color)))
+coordinates(data1) <- cbind(data1$longitude..decimal.degrees. , data1$latitude..decimal.degrees.)
+proj4string(data1) = CRS("+proj=longlat +datum=WGS84 +ellps=WGS84 +towgs84=0,0,0")
+##########  maps       #############################
+my.palette1 <- brewer.pal(n = 9, name = "OrRd")
+my.palette1 <- brewer.pal(n = 9, name = "YlOrRd")
+my.palette3 <- brewer.pal(n = 9, name = "RdYlBu")
+my.palette1 <- my.palette1[-1]
+my.palette2 <- brewer.pal(n = 9, name = "Greys")
+ry<-colorRampPalette(c("#FFFFCC","orange","#BD0026"))(30) ## yello to red
+wb<-colorRampPalette(c("whitesmoke","grey20"))( 30 )
+br<-colorRampPalette(c("#4575B4","#FFFFBF","#D73027"))(40)
+yr<-colorRampPalette(c("#FFFFCC","orange","#BD0026"))(30) ## 
+yr_OHI<-colorRampPalette(c("#FFFFCC","orange","#BD0026"))(22) ## 
+yr_OHI<-c(yr_OHI, rep("#BD0026", times=8))
+
+ext<-raster::extent(-180,180,-60,70)
+ext_eur<-raster::extent(-10,30,35,70)
+```
+
+
+## legend variables
+
+```{r legend_var}
+## human pop
+r.range <- c(minValue(pop), maxValue(pop))
+llab<-c("0","10","100","1,000","10,000","50,000")
+numlab<-c(0,10,100,1000,10000,50000)
+numpop<-log(numlab+1)
+arg <- list(at=numpop, labels=llab, cex.axis=0.8)
+## dist market
+r.range <- c(minValue(dist_mar), maxValue(dist_mar))
+llab<-c("0","10","100","1,000","5,000")
+numlab<-c(0,10,100,1000,5000)
+numpop<-log(numlab+1)
+arg_distmark <- list(at=numpop, labels=llab, cex.axis=0.8)
+##  warming
+#  range(xx[[2]])
+numlab2<-seq(-1,1.5,by=.5)
+llab2<-as.character(numlab2)
+arg2 <- list(at=numlab2, labels=numlab2, cex.axis=0.8)
+#  OHI
+r.range <- c(minValue(OHI_2013), maxValue(OHI_2013))
+llab<-c("0","2","4","6","8","10","12")
+numlab<-c(0,2,4,6,8,10,12)
+arg_OHI <- list(at=numlab, labels=llab, cex.axis=0.8)
+```
+
+
+## fig_var_layers)_fig1
+
+```{r fig_1}
+#           dev.off() 
+## points-  all meta-analysis
+# points(data1,pch=1, cex=.7, lwd=.5)
+cexlab<-1.1
+cexlet<-1.1
+cexleg<-0.7
+al_map<-0.9
+base_color<-"whitesmoke"
+base_color<-"grey75"
+xlonlab<-c(-180,-90,0,90,180)
+ylonlab<-c(-60,-30,0,30,60)
+xlatpos<--182
+ylonpos<--70
+xletpos<--188
+yletpos<-81
+baseylim<-c(-63,75) # was -50
+correct_num<-0# number ot move down b c d x axis label
+## for legends
+#leg_yloc<-c(0.05,0.70)
+#legx1<-0.05
+#leg_space<-0.25
+#legx2<-legx1+leg_space
+#legx3<-legx2+leg_space
+#legx4<-legx3+leg_space
+leg_line<-3.33
+#
+mmar<-c(0.5,0.5,0.5,0)
+par(mfrow=c(5,1), mar=mmar,oma=c(3,2,0.5,1), xpd=F)#(bottom, left, top, right)  ## messes up projection
+### human density
+plot(base, col=base_color, border=base_color, xlim = c(-180,180),
+     ylim =baseylim, bg = "transparent", lwd=0.5, xpd=F)
+axis(2,las=2, pos=xlatpos, labels=T,tck=-0.01, cex=.9, at = ylonlab) # y-axis
+axis(1, las=1, pos=ylonpos+correct_num, labels=F,tck=-0.01, cex=.9, at = xlonlab)# x-axis
+plot(popl, legend=F, alpha=al_map, col=yr, add=TRUE, xpd=F)  #  , ext=ext
+text(xletpos,yletpos, label="(a)", font=2, cex=cexlet, xpd=TRUE) 
+# add legend
+plot(popl, legend.only=TRUE, col=yr,legend.width=1, legend.shrink=0.9,axis.args=arg, 
+     legend.args=list(text=expression("Human density (~km"^"-2"*")" ), side=4, font=1, line=leg_line, cex=cexleg),
+     add=TRUE); par(mar = par("mar"))   # #/3
+### SST change
+par(mar=mmar, xpd=F)
+plot(base, col=base_color, border=base_color, xlim = c(-180,180),
+     ylim =baseylim, bg = "transparent", lwd=0.5)
+plot(xx[[2]], legend=F, alpha=al_map, col=br, bty="n", box=FALSE, axes=F, xpd=F, add=TRUE)  # plot(xx[[2]],col=br)
+axis(2,las=2, pos=xlatpos, labels=T,tck=-0.01, cex=.9, at = ylonlab) # y-axis
+axis(1, las=1, pos=ylonpos+correct_num, labels=F,tck=-0.01, cex=.9, at = xlonlab)# x-axis
+text(xletpos,yletpos, label="(b)", font=2, cex=cexlet, xpd=TRUE) 
+# add legend
+plot(xx[[2]], legend.only=TRUE, col=br,legend.width=1, legend.shrink=0.9,axis.args=arg2, alpha=0.9,
+     legend.args=list(text='SST change (deg./decade)', side=4, font=1, line=leg_line, cex=cexleg),
+     add=TRUE)
+### dist_market         summary(dist_marl)
+par(mar=mmar)
+plot(base, col=base_color, border=base_color, xlim = c(-180,180),
+     ylim =baseylim, bg = "transparent", lwd=0.5, xpd=F)
+plot(dist_marl, legend=F, alpha=al_map, col=rev(yr), bty="n", box=FALSE, axes=F, xpd=F, add=TRUE)  # plot(xx[[2]],col=br)    ext=ext, 
+axis(2,las=2, pos=xlatpos, labels=T,tck=-0.01, cex=.9, at = ylonlab) # y-axis
+axis(1, las=1, pos=ylonpos+correct_num, labels=F,tck=-0.01, cex=.9, at = xlonlab)# x-axis
+text(xletpos,yletpos, label="(c)", font=2, cex=cexlet, xpd=TRUE) 
+plot(dist_marl, legend.only=TRUE, col=rev(yr),legend.width=1, legend.shrink=0.9,axis.args=arg_distmark, alpha=0.9,
+     legend.args=list(text='Distance to market (km x 100)', side=4, font=1, line=leg_line, cex=cexleg),
+     add=TRUE)
+text(x=-213, y=0, labels="Latitude", cex=cexlab, srt=90, xpd=NA)
+
+# OHI
+par(mar=mmar, xpd=F)
+plot(base, col=base_color, border=base_color, xlim = c(-180,180),
+     ylim =baseylim, bg = "transparent", lwd=0.5, xpd=F)
+plot(OHI_2013, legend=F, alpha=al_map, col=yr_OHI, bty="n", box=FALSE, axes=F, xpd=F, add=TRUE)  # plot(xx[[2]],col=br)    ext=ext, 
+plot(base, col=base_color, border=base_color, xlim = c(-180,180),
+     ylim =baseylim, bg = "transparent", lwd=0.5, xpd=F, add=T)
+axis(2,las=2, pos=xlatpos, labels=T,tck=-0.01, cex=.9, at = ylonlab) # y-axis
+axis(1, las=1, pos=ylonpos+correct_num, labels=F,tck=-0.01, cex=.9, at = xlonlab)# x-axis
+text(xletpos,yletpos, label="(d)", font=2, cex=cexlet, xpd=TRUE) 
+plot(OHI_2013, legend.only=TRUE, col=yr_OHI,legend.width=1, legend.shrink=0.9, alpha=0.9, axis.args=arg_OHI,
+     legend.args=list(text='Cumulative human impact', side=4, font=1, line=3, cex=cexleg),
+     add=TRUE)
+
+# non-natvies
+par(mar=mmar, xpd=F)
+plot(base, col=base_color, border=base_color, xlim = c(-180,180),
+     ylim =baseylim, bg = "transparent", lwd=0.5, xpd=F)
+plot(Molnar, col=Molnar$non_native_color, border="light gray",
+     bg = "transparent", lwd=0.5, add=T)
+axis(2,las=2, pos=xlatpos, labels=T,tck=-0.01, cex=.9, at = ylonlab) # y-axis
+axis(1, las=1, pos=ylonpos, labels=T,tck=-0.01, cex=.9, at = xlonlab)# x-axis
+text(xletpos,yletpos, label="(e)", font=2, cex=cexlet, xpd=TRUE) 
+
+text(x=0, y=-95, labels="Longitude", cex=cexlab, srt=0, xpd=NA) # x axis
+# legend
+lcex=.85
+zz<-c(0,60)#zlimit 
+bbb<-seq(0,60,length.out = 31)
+fields::image.plot(zlim = zz, nlevel = 5, breaks=bbb,legend.only = TRUE, 
+                   horizontal = FALSE, col = scales::alpha(yr, 1), axis.args=list(cex.axis=0.8),
+                   legend.args = list(text = "Non-native richness" ,cex = cexleg, side = 4, line = 3),
+                   add=TRUE) # graphics.reset=T
+# full screen, full plot windo ver and about 1/3 horixontal, more horixontal unitl axis line up with map
+##  save pdf
+setwd(fig_file) 
+# save as     layers_used_anal
+ # dev.copy2pdf(file="layer_meta_maps.pdf", width = 9, height =10, out.type="cairo") # h of 10 x axis overalp
+```
+
+
+## fig_effect_maps_fig2
+ start next plot of maps of data points colored by effect size
+```{r fig_2}
+dev.off()
+## begin data plots
+dat_cex<-1.7
+dat_lwd<-1.9
+dat_alpha<-0.9
+base_color<-"grey40"
+base_oc<-"paleturquoise1"  # "cadetblue1"   # skyblue   # "transparent"
+base_oc2<-"transparent" 
+mmar<-c(0.5,2,1,3)
+baseylim<-c(-64.5,75)
+xxlim<-c(-170,170)
+rect1<-11 # smaller means larger
+rect2<-7
+#####
+par(mfrow=c(3,1), mar=mmar, oma=c(4,2,0.5,2), xpd=FALSE)#(b
+##  abund data   ###################################
+datp<-sdat_abu
+plot(base, col=base_color, border=base_color, xlim = xxlim,
+     ylim =baseylim, bg = base_oc2, lwd=0.5, xpd=FALSE)
+rect(xxlim[1]-rect1, baseylim[1]-rect2, xxlim[2]+rect1, baseylim[2]+rect2, col = base_oc, border = NA)
+plot(base, col=base_color, border=base_color, xlim = xxlim,
+     ylim =baseylim, bg = base_oc2, lwd=0.5, add=TRUE)
+axis(2,las=2, pos=xlatpos, labels=T,tck=-0.01, cex=.9, at = ylonlab) # y-axis
+axis(1, las=1, pos=ylonpos, labels=F,tck=-0.01, cex=.9, at = xlonlab)# x-axis
+points(datp$longitude..decimal.degrees., datp$latitude..decimal.degrees.,
+       col=scales::alpha(datp$mean_yi_color, dat_alpha), pch=1, cex=dat_cex, lwd=dat_lwd)
+text(xletpos,yletpos, label="(a)", font=2, cex=cexlet, xpd=TRUE) 
+##  div data   ###################################  sdat_div
+datp<-sdat_div
+plot(base, col=base_color, border=base_color, xlim = xxlim,
+     ylim =baseylim, bg = base_oc2, lwd=0.5, xpd=F)
+rect(xxlim[1]-rect1, baseylim[1]-rect2, xxlim[2]+rect1, baseylim[2]+rect2, col = base_oc, border = NA)
+plot(base, col=base_color, border=base_color, xlim = xxlim,
+     ylim =baseylim, bg = base_oc2, lwd=0.5, add=TRUE)
+axis(2,las=2, pos=xlatpos, labels=T,tck=-0.01, cex=.9, at = ylonlab) # y-axis
+axis(1, las=1, pos=ylonpos, labels=F,tck=-0.01, cex=.9, at = xlonlab)# x-axis
+points(datp$longitude..decimal.degrees., datp$latitude..decimal.degrees.,
+       col=scales::alpha(datp$mean_yi_color, dat_alpha), pch=1, cex=dat_cex, lwd=dat_lwd)
+text(xletpos,yletpos, label="(b)", font=2, cex=cexlet, xpd=TRUE) 
+
+text(x=-213, y=0, labels="Latitude", cex=cexlab, srt=90, xpd=NA)
+# add legend
+lcex=.85
+zz<-c(-2,2)#zlimit    rg_col_df
+bbb<-seq(-2,2,length.out = 31)
+fields::image.plot(zlim = zz, nlevel = 5, breaks=bbb,legend.only = TRUE, 
+                   horizontal = FALSE, col = scales::alpha(rg_color, 0.90), axis.args=list(cex.axis=0.8),
+                   legend.args = list(text = "Effect size" ,cex = cexleg, side = 4, line = 1.5),
+                   add=TRUE, smallplot= c(.93,.96,.1,.9))
+# (min % from left, max % from left, min % from bottom, max % from bottom)
+
+# ind data  ######################################
+datp<-sdat_ind
+plot(base, col=base_color, border=base_color, xlim = xxlim,
+     ylim =baseylim, bg = base_oc2, lwd=0.5, xpd=F)
+rect(xxlim[1]-rect1, baseylim[1]-rect2, xxlim[2]+rect1, baseylim[2]+rect2, col = base_oc, border = NA)
+plot(base, col=base_color, border=base_color, xlim = xxlim,
+     ylim =baseylim, bg = base_oc2, lwd=0.5, add=TRUE)
+points(datp$longitude..decimal.degrees., datp$latitude..decimal.degrees.,
+       col=scales::alpha(datp$mean_yi_color, dat_alpha), pch=1, cex=dat_cex, lwd=dat_lwd)
+text(xletpos,yletpos, label="(c)", font=2, cex=cexlet, xpd=TRUE) 
+## add axis
+axis(2,las=2, pos=xlatpos, labels=TRUE,tck=-0.01, cex=.9, at = ylonlab) # y-axis
+axis(1, las=1, pos=ylonpos, labels=TRUE,tck=-0.01, cex=.9, at = xlonlab)# x-axis
+
+text(x=0, y=-95, labels="Longitude", cex=cexlab, srt=0, xpd=NA) # x axis
+
+##  save pdf
+setwd(fig_file) 
+#  see above for fig instructions , top middel pensicl mark for vert
+#   name --      map_locations_effect_size_fig2
+#  dev.copy2pdf(file="layer_meta_maps.pdf", width = 9, height =10, out.type="cairo") # h of 10 x axis overalp
+```
+
+
+
+
+
+## predict_layer_box_fig4
+
+```{r pred_fig}
+#### fig 4 in manuscript
+### get shapefile of regions - MEOW shape loaded above
+#### summarixe data by region
+pred_sp<-pred1 %>%   #  names(pred1)  names(pred_sp)
+  group_by(ECOREGION) %>% # levels(pred1$ECOREGION)
+  summarise(yi_bio_medain=median(bio_yi), bio_yi_mean=mean(bio_yi),
+            bio_yi_stdev=sd(bio_yi), n=n(), upCI=ci(bio_yi)[3], 
+            lowCI=ci(bio_yi)[2],
+            yi_ind_medain=median(ind_yi), ind_yi_mean=mean(ind_yi),
+            ind_yi_stdev=sd(ind_yi), n=n(), ind_upCI=ci(ind_yi)[3], 
+            ind_lowCI=ci(ind_yi)[2]) %>% 
+  mutate(yi_bio_medain_color = as.character(cut(yi_bio_medain, breaks=c(-Inf,lnn, Inf), labels=rg_color))) %>% 
+  mutate(yi_ind_medain_color = as.character(cut(yi_ind_medain, breaks=c(-Inf,lnn, Inf), labels=rg_color)))
+### merge data to polygon
+shape3<-sp::merge(shape,pred_sp,by="ECOREGION" , all.x=F)
+mess<-shape3@data  #  
+mess2<-as.vector(shape3$yi_bio_medain_color) # as.vector(shape3@data$yi_bio_medain_color)
+###
+mes<-pred_sp1 %>%
+  filter(upCI<0 & lowCI<0)  ### 118 of 175  67%
+mes<-pred_sp1 %>%
+  filter(upCI>0 & lowCI>0)  ### 31 of 175    18%
+mes<-pred_sp1 %>%
+  filter(ind_upCI<0 & ind_lowCI<0)  ### 81 of 175  46%
+mes<-pred_sp1 %>%
+  filter(ind_upCI>0 & ind_lowCI>0)  ### 58 of 175    33%
+########################################################################################################
+########################################################################################################
+#######################################################################################################
+#######   start plotting for figure predict figure
+dev.off()
+#
+setwd(fig_file) 
+#setEPS()
+#postscript("map_and_box.eps", width = 4.5, height = 6,colormodel="rgb" )
+
+###  map, all biod, 5 and 5, then for individs
+#mat<-matrix(c(rep(1,8),rep(2,6),rep(3,1),rep(4,1),rep(5,8),rep(6,6),rep(7,1),rep(8,1)), 4, 8, byrow = TRUE)
+#mat<-matrix(c(rep(1,6),rep(2,6),rep(3,6),rep(4,6)), 4, 6, byrow = TRUE)
+#z<-layout(mat, widths=rep(1, ncol(mat)), heights=rep(1, ncol(mat)))# #  layout.show(z)
+#par(mar=c(1.5,1,.5,0),oma=c(0.5,0.5,0.5,0.5))#
+mar_map<-c(3,1,.5,5)
+sploc<-c(0.80,0.82, 0.4,0.85)
+par(mfrow=c(4,1),mar=mar_map,oma=c(0.5,0.5,0.5,0.5))#
+###########################################################################
+###  plot 1
+#map( "worldHires",xlim = c(-180,180), ylim = c(-60,70),fill=T,col="light gray", 
+#     border=F, cex.lab=1, xpd=FALSE,mar=c(2,2,0,0))# ,mar=c(3,5,0,5)map.axes(lty=1.2, labels=FALSE)
+plot(base, col="light gray", border="light gray", xlim = c(-180,180),
+     ylim = c(-60,70), bg = "transparent", lwd=0.5)
+
+xlonlab<-c(-180,-90,0,90,180)
+ylonlab<-c(-60,-30,0,30,60)
+axis(2,las=2, pos=-182, labels=F,tck=-0.01, cex=.9, at = ylonlab)
+axis(1, las=1, pos=-70, labels=F,tck=-0.01, cex=.9, at = xlonlab)
+###  add labels
+text(x=xlonlab, y=-78, labels=xlonlab, cex=.9, xpd=NA) # x axis
+text(y=ylonlab, x=-195, labels=ylonlab, cex=.9, xpd=NULL) 
+#  sp::spplot(shape3, zcol="ECOREGION", col.regions = mess2, colorkey = F, col=NA)
+plot(shape3, col=shape3$yi_bio_medain_color, border="light gray",
+     bg = "transparent", lwd=0.5, add=T)
+text(-175,80, label="(a)", font=2, cex=1, xpd=TRUE) 
+# image.plot from the fields package inserts a color bar
+lcex=.85
+zz<-c(-2,2)#zlimit    rg_col_df
+bbb<-seq(-2,2,length.out = 31)
+fields::image.plot(zlim = zz, nlevel = 5, breaks=bbb,legend.only = TRUE, 
+                   horizontal = FALSE, col = scales::alpha(rg_color, 0.5), axis.args=list(cex.axis=0.8),
+                   legend.args = list(text = "Effect size" ,cex = 0.6, side = 4, line = 2),
+                   smallplot=sploc, graphics.reset=F) #
+###  axis labels
+text(x=-10, y=-70, labels="Longitude", cex=.9, srt=0, xpd=NA) # x axis
+text(x=-180, y=10, labels="Latitude", cex=.9, srt=90, xpd=NA)
+##################################################
+#####   data prep.
+# set up for box of biodiv
+### for plot of meta and predicte points   names(sdat) and names(pred1)
+all_dat<-sdat %>% 
+  mutate(data="meta") %>% 
+  dplyr::select(data,yi,yi_color,X.variable3_review,X.variable10_review)
+mes<- pred1 %>% 
+  mutate(data="pred") %>% 
+  dplyr::select(data,bio_yi,ind_yi,yi_bio_color,yi_ind_color)
+all_dat<-bind_rows(all_dat,mes)
+
+#### for plot 3- 5 worst/best
+##  arrange by median to get level order
+pred_sp1<-pred_sp %>%
+  dplyr::arrange(yi_bio_medain) 
+###  get 5 highest and lowet medians in effect size
+pred_sp2<-pred_sp1[c(1:7,(length(rownames(pred_sp1))-2):length(rownames(pred_sp1))),]
+### get regions not overlap witho  names(pred_sp1)
+pred_sp2$space<-c(1:length(row.names(pred_sp2)))
+##  merge with all data 
+pred_mer<-pred_sp2 %>% 
+  left_join(pred1) %>%  # names(pred_mer)
+  mutate(ECOREGION=factor(ECOREGION, levels=as.character(pred_sp2$ECOREGION)))
+  
+###  plot
+#########################################################################################
+####  2- boxplots  worst/best for biodiversity
+resp<-pred_mer$bio_yi     #  names(pred_mer)
+fac1<-pred_mer$ECOREGION
+yylim<-c(-8,8)
+
+bxlwd<-1.5  # bos line width
+cc1<-pred_sp2$yi_bio_medain_color  #
+space<-c(1:length(levels(fac1)))
+space_at<-c(1:10,12,13)
+mean_pch<-1 # pch of mean 
+mean_cex<-0.7 #size o mean circle 
+cc2<-pred_mer$yi_bio_medain_color
+cc3<-pred_mer$yi_bio_color
+llab1<-levels(fac1)
+llab1<-c("N. California","Puget Trough","Faroe Plateau","Levantine Sea","Aegean Sea",
+         "G. of Sidra", "Alboran Sea","Tromelin Isl.","Hawaii",
+         "S. China Sea","Meta-analysis","Predicted")
+ylabnum<-(-9.4)
+xlab1<-(-0.4)
+tttletx<- 0.6  # letter locations
+tttlety<-8.4
+anglex<-27  # angle of x axis labels
+y_sample<--7.3
+#
+mpar<-c(4,3.8,0,1)#(bottom, left, top, right) 
+par(mar = mpar)
+#par(mar = par("mar"))
+
+b<-boxplot(resp~fac1, outline=F, at=space, xlim=c(0.5,13.5),
+           col="transparent",axes=F,border="transparent", ylim=yylim, boxlwd = bxlwd)   # ,at=space
+#box(lwd=1.2)
+axis(2,las=2, labels=F,at=c(-8,-4,0,4,8), tck=-0.01, pos=0.3)
+axis(1, las=1, padj=-1, at=space_at, labels=F,tck=-0.01, cex=.9)
+###  add labels   x and then y
+text(x=space_at, y=ylabnum, labels=llab1, cex=.9, srt=anglex, adj=1, xpd=NA)
+text(y=c(-8,-4,0,4,8), x=0, labels=c(-8,-4,0,4,8), cex=.9, xpd=NA) #  y axis
+###add points
+points(x=jitter(pred_mer$space, 1),y=resp, col=cc3, pch=16, cex=0.3)
+##   sample size
+text(x=space, y=y_sample, labels=pred_sp2$n, cex=.7)
+# letter
+text(tttletx,tttlety, label="(b)", font=2, cex=1, xpd=NA) 
+####   bottom line for other plots
+segments(0.5,(yylim[1]-.6),13.5,(yylim[1]-.57), lwd=1, lty=1)
+segments(0.5,0,13.5,0, lwd=1, lty=2)
+## re-plot
+b<-boxplot(resp~fac1, outline=F,
+           col="transparent",axes=F,border=cc1, ylim=yylim, boxlwd = bxlwd, add=TRUE)  
+#add means
+q<-tapply(resp,list(fac1),mean,na.rm=T)
+s=as.vector(q)
+points(space,s,pch=mean_pch,col="grey40",cex=mean_cex)
+###  axis labels
+text(x=5, y=-16, labels="Ecoregions", cex=.9, srt=0, xpd=NA) # x axis
+text(x=12.2, y=-16, labels="All data", cex=.9, srt=0, xpd=NA) # 
+text(x=xlab1, y=0, labels="Effect size", cex=.9, srt=90, xpd=NA)
+##########################################################################################
+##    3- meta data for biodiversity
+dat1<-all_dat %>% #names(dat1)
+  dplyr::filter(X.variable3_review=="community" ) %>% 
+  filter(X.variable10_review=="species richness")
+dat2<-all_dat %>%
+  dplyr::filter(data=="pred" ) 
+resp<-dat1$yi
+resp1<-dat2$bio_yi
+bxlwd<-1.5  # bos line width
+cc1<-dat1$yi_color
+cc2<-dat2$yi_bio_color
+space<-1 #c(1:length(levels(fac1)))
+mean_pch<-1 # pch of mean 
+mean_cex<-0.7 #size o mean circle 
+
+#####   meta data
+xl<-12
+b<-boxplot(resp, outline=F, axes=F, at=xl, width=.8,
+           col="white",axes=T,border="grey50", ylim=yylim, boxlwd = bxlwd, add=TRUE)   # ,at=space  plot(1,1)
+###add points
+points(x=jitter(rep(xl,length(resp)), 1),y=resp, col=cc1, pch=16, cex=0.3)
+#add means
+q<-mean(resp1,na.rm=T)
+s=as.vector(q)
+points(xl,s,pch=mean_pch,col="grey40",cex=mean_cex)
+##   sample size
+text(x=xl, y=y_sample, labels=length(resp), cex=.7)
+## re-plot
+b<-boxplot(resp, outline=F, axes=F, at=12, width=.8,
+           col="transparent",axes=T,border="grey50", ylim=yylim, boxlwd = bxlwd, add=TRUE)  
+###########################################
+######  predicted
+xl<-13
+b<-boxplot(resp1, outline=F, axes=F, at=xl, width=.8,
+           col="transparent",axes=F,border="grey50", ylim=yylim, boxlwd = bxlwd, add=TRUE)   # ,at=space
+###add points
+points(x=jitter(rep(xl,length(resp1)), 1),y=resp1, col=cc2, pch=16, cex=0.3)
+##   sample size
+text(x=xl, y=y_sample, labels=length(resp1), cex=.7)
+## re-plot
+b<-boxplot(resp1, outline=F, axes=F, at=xl, width=.8,
+           col="white",axes=F,border="grey50", ylim=yylim, boxlwd = bxlwd, add=TRUE) 
+#add means
+q<-mean(resp1,na.rm=T)
+s=as.vector(q)
+points(xl,s,pch=mean_pch,col="grey40",cex=mean_cex)
+###
+b<-boxplot(resp1, outline=F, axes=F, at=xl, width=.8,
+           col="transparent",axes=F,border="grey50", ylim=yylim, boxlwd = bxlwd, add=TRUE)   #
+#########################################################################
+#########################################################################
+#####  second half start individual plot
+#########################################################################
+#########################################################################
+par(mar=mar_map)
+####   map of individuals   !!!!!!!!!!!!!!!!!!!
+plot(base, col="light gray", border="light gray",
+     xlim = c(-180,180), ylim = c(-60,70),
+     bg = "transparent", lwd=0.5)
+
+xlonlab<-c(-180,-90,0,90,180)
+ylonlab<-c(-60,-30,0,30,60)
+axis(2,las=2, pos=-182, labels=F,tck=-0.01, cex=.9, at = ylonlab)
+axis(1, las=1, pos=-70, labels=F,tck=-0.01, cex=.9, at = xlonlab)
+###  add labels
+text(x=xlonlab, y=-78, labels=xlonlab, cex=.9, xpd=NA) # x axis
+text(y=ylonlab, x=-195, labels=ylonlab, cex=.9, xpd=NULL) 
+#  sp::spplot(shape3, zcol="ECOREGION", col.regions = mess2, colorkey = F, col=NA)
+plot(shape3, col=shape3$yi_ind_medain_color, border="light gray",
+     bg = "transparent", lwd=0.5, add=T)
+text(-175,80, label="(c)", font=2, cex=1, xpd=TRUE) 
+# image.plot from the fields package inserts a color bar
+lcex=.85
+zz<-c(-2,2)#zlimit    rg_col_df
+bbb<-seq(-2,2,length.out = 31)
+fields::image.plot(zlim = zz, nlevel = 5, breaks=bbb,legend.only = TRUE, 
+                   horizontal = FALSE, col = scales::alpha(rg_color, 0.5), axis.args=list(cex.axis=0.8),
+                   legend.args = list(text = "Effect size" ,cex = 0.6, side = 4, line = 2),
+                   smallplot=sploc, graphics.reset=F) #
+###  axis labels
+text(x=-10, y=-70, labels="Longitude", cex=.9, srt=0, xpd=NA) # x axis
+text(x=-180, y=10, labels="Latitude", cex=.9, srt=90, xpd=NA)
+##################################################
+#####   data prep.
+# set up for box of ind
+### for plot of meta and predicte points   names(sdat) and names(pred1)
+all_dat<-sdat %>% 
+  mutate(data="meta") %>% 
+  dplyr::select(data,yi,yi_color,X.variable3_review,X.variable10_review)
+mes<- pred1 %>% 
+  mutate(data="pred") %>% 
+  dplyr::select(data,bio_yi,ind_yi,yi_bio_color,yi_ind_color)
+all_dat<-bind_rows(all_dat,mes)
+
+#### for plot 3- 5 worst/best
+##  arrange by median to get level order
+pred_sp1<-pred_sp %>%
+  dplyr::arrange(yi_ind_medain) 
+###  get 5 highest and lowet medians in effect size
+pred_sp2<-pred_sp1[c(1:7,(length(rownames(pred_sp1))-2):length(rownames(pred_sp1))),]
+### get regions not overlap witho  names(pred_sp1)
+pred_sp2$space<-c(1:length(row.names(pred_sp2)))
+##  merge with all data 
+pred_mer<-pred_sp2 %>% 
+  left_join(pred1) %>%  # names(pred_mer)
+  mutate(ECOREGION=factor(ECOREGION, levels=as.character(pred_sp2$ECOREGION)))
+
+###  plot
+#########################################################################################
+####  4 boxplots worst/best for ind
+resp<-pred_mer$ind_yi     #  names(pred_mer)
+fac1<-pred_mer$ECOREGION
+yylim<-c(-8,8)
+bxlwd<-1.5  # bos line width
+cc1<-pred_sp2$yi_ind_medain_color  #
+space<-c(1:length(levels(fac1)))
+space_at<-c(1:10,12,13)
+mean_pch<-1 # pch of mean 
+mean_cex<-0.7 #size o mean circle 
+cc2<-pred_mer$yi_ind_medain_color
+cc3<-pred_mer$yi_ind_color
+llab1<-levels(fac1)
+llab1<-c("S. China Sea","Yellow Sea","N.E. Honshu","Mascarene Isl.","Southern China",
+         "E. China Sea", "Bermuda","Puget Trough","Aleutian Islands",
+         "Falklands","Meta-analysis","Predicted")
+#
+mpar<-c(4,3.8,0,1)#(bottom, left, top, right) 
+par(mar = mpar)
+#par(mar = par("mar"))
+
+b<-boxplot(resp~fac1, outline=F, at=space, xlim=c(0.5,13.5),
+           col="transparent",axes=F,border="transparent", ylim=yylim, boxlwd = bxlwd)   # ,at=space
+#box(lwd=1.2)
+axis(2,las=2, labels=F,at=c(-8,-4,0,4,8), tck=-0.01, pos=0.3)
+axis(1, las=1, padj=-1, at=space_at, labels=F,tck=-0.01, cex=.9)
+###  add labels   x and then y
+text(x=space_at, y=ylabnum, labels=llab1, cex=.9, srt=anglex, adj=1, xpd=NA)
+text(y=c(-8,-4,0,4,8), x=0, labels=c(-8,-4,0,4,8), cex=.9, xpd=NA) #  y axis
+###add points
+points(x=jitter(pred_mer$space, 1),y=resp, col=cc3, pch=16, cex=0.3)
+##   sample size
+text(x=space, y=y_sample, labels=pred_sp2$n, cex=.7)
+# letter
+text(tttletx,tttlety, label="(d)", font=2, cex=1, xpd=NA) 
+####   bottom line for other plots
+segments(0.5,(yylim[1]-.6),13.5,(yylim[1]-.57), lwd=1, lty=1)
+segments(0.5,0,13.5,0, lwd=1, lty=2)
+## re-plot
+b<-boxplot(resp~fac1, outline=F,
+           col="transparent",axes=F,border=cc1, ylim=yylim, boxlwd = bxlwd, add=TRUE)  
+#add means
+q<-tapply(resp,list(fac1),mean,na.rm=T)
+s=as.vector(q)
+points(space,s,pch=mean_pch,col="grey40",cex=mean_cex)
+###  axis labels
+text(x=5, y=-16, labels="Ecoregions", cex=.9, srt=0, xpd=NA) # x axis
+text(x=12.2, y=-16, labels="All data", cex=.9, srt=0, xpd=NA) # 
+text(x=xlab1, y=0, labels="Effect size", cex=.9, srt=90, xpd=NA)
+##########################################################################################
+##    - data prep for individual
+dat1<-all_dat %>% #names(dat1)
+  filter(X.variable3_review=="species") %>% 
+  filter(X.variable10_review=="survival" | X.variable10_review=="fitness" | X.variable10_review=="growth")
+dat2<-all_dat %>%
+  dplyr::filter(data=="pred" ) 
+resp<-dat1$yi
+resp1<-dat2$ind_yi  # resp1<-dat2$bio_yi  mes<-all_dat[all_dat$ind_yi>2,]
+bxlwd<-1.5  # bos line width
+cc1<-dat1$yi_color
+cc2<-dat2$yi_ind_color
+space<-1 #c(1:length(levels(fac1)))
+mean_pch<-1 # pch of mean 
+mean_cex<-0.7 #size o mean circle 
+
+#####   meta data for individual
+xl<-12
+b<-boxplot(resp, outline=F, axes=F, at=xl, width=.8,
+           col="white",axes=T,border="grey50", ylim=yylim, boxlwd = bxlwd, add=TRUE)   # ,at=space  plot(1,1)
+###add points
+points(x=jitter(rep(xl,length(resp)), 1),y=resp, col=cc1, pch=16, cex=0.3)
+#add means
+q<-mean(resp1,na.rm=T)
+s=as.vector(q)
+points(xl,s,pch=mean_pch,col="grey40",cex=mean_cex)
+##   sample size
+text(x=xl, y=y_sample, labels=length(resp), cex=.7)
+## re-plot
+b<-boxplot(resp, outline=F, axes=F, at=12, width=.8,
+           col="transparent",axes=T,border="grey50", ylim=yylim, boxlwd = bxlwd, add=TRUE)  
+###########################################
+######  pred for individual
+xl<-13
+b<-boxplot(resp1, outline=F, axes=F, at=xl, width=.8,
+           col="transparent",axes=F,border="grey50", ylim=yylim, boxlwd = bxlwd, add=TRUE)   # ,at=space
+###add points
+points(x=jitter(rep(xl,length(resp1)), 1),y=resp1, col=cc2, pch=16, cex=0.3)
+##   sample size
+text(x=xl, y=y_sample, labels=length(resp1), cex=.7)
+## re-plot
+b<-boxplot(resp1, outline=F, axes=F, at=xl, width=.8,
+           col="white",axes=F,border="grey50", ylim=yylim, boxlwd = bxlwd, add=TRUE) 
+#add means
+q<-mean(resp1,na.rm=T)
+s=as.vector(q)
+points(xl,s,pch=mean_pch,col="grey40",cex=mean_cex)
+###
+b<-boxplot(resp1, outline=F, axes=F, at=xl, width=.8,
+           col="transparent",axes=F,border="grey50", ylim=yylim, boxlwd = bxlwd, add=TRUE)   #
+
+#########################################################################
+#########################################################################
+dev.copy2pdf(file="map_and_box_fig4.pdf", width = 4.5, height = 6, out.type="cairo")
+
+dev.off()
+```
+
+
+
+
+
+
