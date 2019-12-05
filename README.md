@@ -15,7 +15,7 @@
       Basic scipt for figure of species with greatest ecological effects- pics were aded outside of plot
   
 
-## Effects of non-nativee species is related with human footprint- Geraldi et al. in press Global Change biology
+## Ecological effects of non-native species in marine ecosystems relate to co-occurring anthropogenic pressures- Geraldi et al. in press Global Change Biology
   
 -non_native_footprint_map_figs_124.Rmd
       Script to figures 1, 2, and 4
